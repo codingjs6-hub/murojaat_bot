@@ -1,0 +1,7 @@
+-- AlterTable
+ALTER TABLE "Appeal" ADD COLUMN     "organizationId" INTEGER,
+ADD COLUMN     "phone" TEXT,
+ALTER COLUMN "holat" SET DEFAULT 'RECEIVED';
+
+-- AlterTable
+ALTER TABLE "User" ADD COLUMN     "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP;

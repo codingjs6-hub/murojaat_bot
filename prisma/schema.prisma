@@ -1,0 +1,88 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// 🌟 YANGI: Murojaatlar holati uchun qat'iy enum
+enum AppealStatus {
+  IN_PROGRESS   // Jarayonda
+  RESOLVED      // Hal qilindi
+  OVERDUE       // Muddati o'tgan (Kechikkan)
+}
+
+model User {
+  id         Int      @id @default(autoincrement())
+  telegramId BigInt   @unique
+  username   String?
+  ism        String?
+  familiya   String?
+  createdAt  DateTime @default(now())
+  phone      String?
+  botStarted Boolean  @default(false)
+  isAdmin    Boolean  @default(false) // 🌟 YANGI: Bot va Frontend uchun adminlik huquqi
+  updatedAt  DateTime @default(now()) @updatedAt
+  appeals    Appeal[]
+}
+
+model Appeal {
+  id             Int             @id @default(autoincrement())
+  murojaatRaqami String          @unique
+  userId         Int
+  chatId         BigInt
+  
+  // 🌟 OPTIMIZATSIYA: Eski String "holat" o'rniga qat'iy enum va mantiq
+  status         AppealStatus    @default(IN_PROGRESS) 
+  
+  xomMatn        String?         @db.Text
+  aiXulosa       String?
+  kategoriya     String?
+  tashkilot      String?
+  
+  // 🕒 🌟 YANGI: Analitika va muddatlar tizimi
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  deadline       DateTime        // 🌟 Tizim beradigan ijro muddati (masalan, +3 kun)
+  resolvedAt     DateTime?       // 🌟 Rahbar "Hal qildim" deb bosgan aniq vaqt
+
+  organizationId Int?
+  phone          String?
+  user           User            @relation(fields: [userId], references: [id])
+  
+  // 🌟 YANGI: Tashkilot bilan bog'liqlik (Xodimlar statistikasini hisoblash uchun kerak)
+  organization   Organization?   @relation(fields: [organizationId], references: [id])
+  AppealMessage  AppealMessage[]
+}
+
+model Organization {
+  id         Int      @id @default(autoincrement())
+  nomi       String
+  masulShaxs String
+  lavozimi   String?
+  telegramId BigInt?
+  username   String?
+  telefon    String?
+  active     Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  kategoriya String?
+  keywords   String?  @db.Text
+  
+  // 🌟 YANGI: Ushbu tashkilotga tegishli murojaatlar ro'yxati
+  appeals    Appeal[]
+}
+
+model AppealMessage {
+  id                Int      @id @default(autoincrement())
+  appealId          Int
+  telegramMessageId Int?
+  turi              String
+  matn              String?
+  fileId            String?
+  createdAt         DateTime @default(now())
+  Appeal            Appeal   @relation(fields: [appealId], references: [id])
+}
