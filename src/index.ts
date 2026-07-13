@@ -734,7 +734,7 @@ async function finalizeAppeal(session: Session) {
 
       // 3. TEST REJIM: Xabar borishi kerak bo'lgan ID'lar ro'yxati
       // Bu yerga o'zingizning haqiqiy Telegram ID'ingizni yozing (masalan: 987654321)
-      const MY_TELEGRAM_ID = 987654321;
+      const MY_TELEGRAM_ID = 8364396329;
 
       // Agar mas'ulning ID'si sizniki bilan bir xil bo'lsa, bitta odamga ikki marta bormasligi uchun Set ishlatamiz
       const recipients = Array.from(
