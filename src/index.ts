@@ -717,19 +717,60 @@ async function finalizeAppeal(session: Session) {
       caption.length > 1000 ? caption.slice(0, 1000) + "..." : caption;
 
     if (targetTelegramId) {
-      const leaderKeyboard = new InlineKeyboard()
-        .text("✅ Hal qilindi", `resolve:${appeal.id}`)
-        .row()
-        .url("✉️ Fuqaroga yozish", `tg://user?id=${session.userId}`);
-      try {
-        await bot.api.sendDocument(targetTelegramId, new InputFile(pdfPath), {
-          caption: safeCaption,
-          reply_markup: leaderKeyboard,
-        });
-      } catch {
-        await bot.api.sendDocument(targetTelegramId, new InputFile(pdfPath), {
-          caption: safeCaption,
-        });
+      // 1. Inline klaviaturani yaratamiz
+      const leaderKeyboard = new InlineKeyboard().text(
+        "✅ Hal qilindi",
+        `resolve:${appeal.id.toString()}`
+      );
+
+      // 2. Fuqaro profiliga o'tish linkini caption matni ichiga joylaymiz
+      const contactText = session.username
+        ? `\n💬 Fuqaro bilan bog'lanish: @${session.username}`
+        : `\n💬 Fuqaro profili: <a href="tg://user?id=${session.userId}">${
+            session.firstName || "Fuqaro"
+          }</a>`;
+
+      const fullCaption = safeCaption + contactText;
+
+      // 3. TEST REJIM: Xabar borishi kerak bo'lgan ID'lar ro'yxati
+      // Bu yerga o'zingizning haqiqiy Telegram ID'ingizni yozing (masalan: 987654321)
+      const MY_TELEGRAM_ID = 987654321;
+
+      // Agar mas'ulning ID'si sizniki bilan bir xil bo'lsa, bitta odamga ikki marta bormasligi uchun Set ishlatamiz
+      const recipients = Array.from(
+        new Set([Number(targetTelegramId), MY_TELEGRAM_ID])
+      );
+
+      // Ro'yxatdagi har bir ID uchun xabarni bir xil qilib yuboramiz
+      for (const chatId of recipients) {
+        try {
+          await bot.api.sendDocument(chatId, new InputFile(pdfPath), {
+            caption: fullCaption,
+            parse_mode: "HTML",
+            reply_markup: leaderKeyboard,
+          });
+        } catch (firstError) {
+          console.error(
+            `❌ ID: ${chatId} ga HTML+Tugma bilan yuborishda xato:`,
+            firstError
+          );
+          try {
+            await bot.api.sendDocument(chatId, new InputFile(pdfPath), {
+              caption: safeCaption,
+              reply_markup: leaderKeyboard,
+            });
+          } catch (secondError) {
+            console.error(
+              `❌ ID: ${chatId} ga zaxira ham o'xshmadi, klaviaturasiz ketadi:`,
+              secondError
+            );
+            try {
+              await bot.api.sendDocument(chatId, new InputFile(pdfPath), {
+                caption: safeCaption,
+              });
+            } catch {}
+          }
+        }
       }
     }
 
