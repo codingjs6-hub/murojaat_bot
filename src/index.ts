@@ -308,6 +308,7 @@ bot.on(":file", async (ctx) => {
   let fileType: string = "unknown";
   let fileName: string = "dalolatnoma";
   let fileSize: number = 0;
+  let isPhoto = false; // ✅ Rasm yoki hujjat ekanligini aniqlash
 
   // 1. Fayl turini aniqlash
   if (ctx.message.photo) {
@@ -316,6 +317,7 @@ bot.on(":file", async (ctx) => {
     fileType = "rasm";
     fileSize = photo.file_size || 0;
     fileName = `${proofRequest.appealNumber}_dalolatnoma.jpg`;
+    isPhoto = true;
   } else if (ctx.message.document) {
     const doc = ctx.message.document;
     fileId = doc.file_id;
@@ -343,11 +345,24 @@ bot.on(":file", async (ctx) => {
       return;
     }
 
-    if (mimeType.includes("pdf")) fileType = "PDF";
-    else if (mimeType.includes("word")) fileType = "Word";
-    else if (mimeType.includes("excel") || mimeType.includes("sheet"))
+    // ✅ To‘g‘ri fileType aniqlash
+    if (mimeType.includes("pdf")) {
+      fileType = "PDF";
+      isPhoto = false;
+    } else if (mimeType.includes("word")) {
+      fileType = "Word";
+      isPhoto = false;
+    } else if (mimeType.includes("excel") || mimeType.includes("sheet")) {
       fileType = "Excel";
-    else fileType = "rasm";
+      isPhoto = false;
+    } else if (mimeType.startsWith("image/")) {
+      fileType = "rasm";
+      isPhoto = true;
+    } else {
+      // Agar ruxsat etilgan bo'lsa, lekin yuqoridagi turlarga kirmasa
+      fileType = "hujjat";
+      isPhoto = false;
+    }
   } else {
     await ctx.reply("❌ Iltimos, rasm yoki hujjat (PDF, Word, Excel) yuklang.");
     awaitingProof.delete(userId);
@@ -382,10 +397,9 @@ bot.on(":file", async (ctx) => {
       data: { status: "RESOLVED", resolvedAt: now },
     });
 
-    // 4. Admin'ga dalolatnoma yuborish (InputFile.fromFileId ishlatiladi!)
+    // 4. Admin'ga dalolatnoma yuborish
     let adminId = 6179892207;
 
-    // Admin'ga dalolatnoma yuborish
     if (adminId) {
       const captionText =
         `📄 **Dalolatnoma**\n\n` +
@@ -397,8 +411,8 @@ bot.on(":file", async (ctx) => {
         `🕒 **Hal qilindi:** ${now.toLocaleString("uz-UZ")}\n\n` +
         `✅ Murojaat tegishli tartibda hal qilindi va dalolatnoma ilova qilindi.`;
 
-      // ✅ Fayl turiga qarab yuborish
-      if (fileType === "rasm") {
+      // ✅ Rasm yoki hujjatga qarab yuborish
+      if (isPhoto) {
         await bot.api.sendPhoto(adminId, fileId, {
           caption: captionText,
           parse_mode: "Markdown",
@@ -423,7 +437,7 @@ bot.on(":file", async (ctx) => {
   } catch (error) {
     console.error("❌ DALOLATNOMA QAYTA ISHLASH XATOSI:", error);
     await ctx.reply("❌ Xatolik yuz berdi. Iltimos, qayta urining.");
-    awaitingProof.delete(userId); // ✅ xatolikda ham tozalanadi
+    awaitingProof.delete(userId);
   }
 });
 
