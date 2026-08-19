@@ -298,7 +298,7 @@ bot.on(":file", async (ctx) => {
   // Faqat shaxsiy chatda ishlaydi
   if (ctx.chat.type !== "private") return;
   if (!ctx.from) return;
-  if (!ctx.message) return; // ✅ Xatolik tuzatildi
+  if (!ctx.message) return;
 
   const userId = ctx.from.id;
   const proofRequest = awaitingProof.get(userId);
@@ -309,6 +309,7 @@ bot.on(":file", async (ctx) => {
   let fileName: string = "dalolatnoma";
   let fileSize: number = 0;
 
+  // 1. Fayl turini aniqlash
   if (ctx.message.photo) {
     const photo = ctx.message.photo[ctx.message.photo.length - 1];
     fileId = photo.file_id;
@@ -338,6 +339,7 @@ bot.on(":file", async (ctx) => {
         "❌ **Noto‘g‘ri fayl turi!**\n\n" +
           "Faqat **rasm (JPG, PNG), PDF, Word, Excel** fayllari qabul qilinadi."
       );
+      awaitingProof.delete(userId);
       return;
     }
 
@@ -348,16 +350,18 @@ bot.on(":file", async (ctx) => {
     else fileType = "rasm";
   } else {
     await ctx.reply("❌ Iltimos, rasm yoki hujjat (PDF, Word, Excel) yuklang.");
+    awaitingProof.delete(userId);
     return;
   }
 
   if (!fileId) {
     await ctx.reply("❌ Fayl topilmadi. Iltimos, qayta urining.");
+    awaitingProof.delete(userId);
     return;
   }
 
   // 2. Fayl hajmini tekshirish
-  const MAX_PROOF_FILE_SIZE = 20 * 1024 * 1024; // 20 MB
+  const MAX_PROOF_FILE_SIZE = 20 * 1024 * 1024;
   if (fileSize > MAX_PROOF_FILE_SIZE) {
     await ctx.reply(
       `❌ **Fayl juda katta!**\n\n` +
@@ -366,6 +370,7 @@ bot.on(":file", async (ctx) => {
         } MB**\n` +
         `Siz yuborgan fayl: **${Math.round(fileSize / 1024 / 1024)} MB**`
     );
+    awaitingProof.delete(userId);
     return;
   }
 
@@ -377,13 +382,14 @@ bot.on(":file", async (ctx) => {
       data: { status: "RESOLVED", resolvedAt: now },
     });
 
-    // 4. Admin'ga dalolatnoma yuborish
-    // const adminId =
-    //   process.env.ERROR_LEADER_ID || process.env.FALLBACK_LEADER_ID;
-
-    // ----tst----
-
-    let adminId = 6179892207;
+    // 4. Admin'ga dalolatnoma yuborish (InputFile.fromFileId ishlatiladi!)
+    let adminId: number | null = null;
+    if (TEST_MODE && TEST_ADMIN_ID) {
+      adminId = TEST_ADMIN_ID;
+    } else {
+      adminId =
+        process.env.ERROR_LEADER_ID || process.env.FALLBACK_LEADER_ID || null;
+    }
 
     if (adminId) {
       const captionText =
@@ -396,7 +402,9 @@ bot.on(":file", async (ctx) => {
         `🕒 **Hal qilindi:** ${now.toLocaleString("uz-UZ")}\n\n` +
         `✅ Murojaat tegishli tartibda hal qilindi va dalolatnoma ilova qilindi.`;
 
-      await bot.api.sendDocument(adminId, new InputFile(fileId), {
+      // ✅ Muhim: InputFile.fromFileId() ishlatiladi!
+      await bot.api.sendDocument(adminId, {
+        document: InputFile.fromFileId(fileId),
         caption: captionText,
         parse_mode: "Markdown",
       });
@@ -414,7 +422,7 @@ bot.on(":file", async (ctx) => {
   } catch (error) {
     console.error("❌ DALOLATNOMA QAYTA ISHLASH XATOSI:", error);
     await ctx.reply("❌ Xatolik yuz berdi. Iltimos, qayta urining.");
-    awaitingProof.delete(userId);
+    awaitingProof.delete(userId); // ✅ xatolikda ham tozalanadi
   }
 });
 
@@ -670,6 +678,7 @@ bot.callbackQuery(/^cancel:(.+)$/, async (ctx) => {
 });
 
 // ========== YANGI: HAL QILINDI TUGMASI (dalolatnoma talab qiladi) ==========
+// ========== HAL QILINDI TUGMASI (dalolatnoma talab qiladi) ==========
 bot.callbackQuery(/^resolve:(\d+)$/, async (ctx) => {
   const appealId = Number(ctx.match[1]);
   const userId = ctx.from.id;
@@ -685,21 +694,24 @@ bot.callbackQuery(/^resolve:(\d+)$/, async (ctx) => {
       return;
     }
 
-    // 1. Xabarni tahrirlash – tugma yo‘qoladi va holat haqida xabar
+    // 1. Eski caption matnini saqlab qolamiz (HTML formatda)
+    const oldCaption = ctx.callbackQuery.message?.caption || "";
+
+    // 2. Xabarni tahrirlash – faqat tugmani olib tashlaymiz, matnni o‘zgartirmaymiz
     await ctx.editMessageCaption({
-      caption:
-        ctx.callbackQuery.message?.caption +
-        `\n\n⏳ **Dalolatnoma kutilmoqda...**\nIltimos, fayl (rasm, PDF, Word, Excel) yuklang.`,
+      caption: oldCaption,
+      parse_mode: "HTML", // asl xabar HTML formatda yuborilgan bo‘lsa
+      reply_markup: undefined, // tugmani olib tashlash
     });
 
-    // 2. Holatni saqlash (status hali o‘zgarmaydi)
+    // 3. Holatni saqlash (status hali o‘zgarmaydi)
     awaitingProof.set(userId, {
       appealId,
       appealNumber: appeal.murojaatRaqami,
       userId,
     });
 
-    // 3. Foydalanuvchiga fayl so‘rash
+    // 4. Foydalanuvchiga dalolatnoma so‘rovchi yangi xabar yuboramiz
     await ctx.reply(
       `📎 **Dalolatnoma faylini yuklang**\n\n` +
         `Murojaat raqami: **${appeal.murojaatRaqami}**\n\n` +
@@ -709,7 +721,8 @@ bot.callbackQuery(/^resolve:(\d+)$/, async (ctx) => {
         `• Word (DOC, DOCX)\n` +
         `• Excel (XLS, XLSX)\n\n` +
         `Maksimal hajm: 20 MB\n\n` +
-        `Fayl yuklaganingizdan so‘ng murojaat hal qilingan deb belgilanadi.`
+        `Fayl yuklaganingizdan so‘ng murojaat hal qilingan deb belgilanadi.`,
+      { parse_mode: "Markdown" }
     );
 
     await ctx
@@ -720,7 +733,6 @@ bot.callbackQuery(/^resolve:(\d+)$/, async (ctx) => {
     await ctx.answerCallbackQuery("Xatolik yuz berdi.").catch(() => {});
   }
 });
-
 // ========== ASOSIY FINALIZE APPEAL FUNKSIYASI (O‘ZGARMAGAN) ==========
 async function finalizeAppeal(session: Session) {
   const tempFiles: string[] = [];
