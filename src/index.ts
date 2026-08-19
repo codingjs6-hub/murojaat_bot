@@ -382,15 +382,9 @@ bot.on(":file", async (ctx) => {
     //   process.env.ERROR_LEADER_ID || process.env.FALLBACK_LEADER_ID;
 
     // ----tst----
-    let adminId: number | null = null;
-    if (TEST_MODE && TEST_ADMIN_ID) {
-      adminId = TEST_ADMIN_ID;
-      console.log(
-        `🧪 TEST MODE: Dalolatnoma test admin'ga (${TEST_ADMIN_ID}) yuborilmoqda`
-      );
-    } else {
-      adminId = 6179892207;
-    }
+
+    let adminId = 6179892207;
+
     if (adminId) {
       const captionText =
         `📄 **Dalolatnoma**\n\n` +
