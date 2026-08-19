@@ -30,11 +30,28 @@ if (!token) throw new Error("BOT_TOKEN topilmadi");
 const bot = new Bot(token);
 const sessions = new Map<number, Session>();
 
+// ========== YANGI: Dalolatnoma kutilayotgan foydalanuvchilar ==========
+const awaitingProof = new Map<
+  number,
+  { appealId: number; appealNumber: string; userId: number }
+>();
+
 // ========== XATOLARNI TUTISH ==========
 bot.catch((err) => {
   console.error("❌ BOT ERROR:", err);
-  // Bot to'xtamasligi uchun hech narsa qilmaymiz, faqat loglaymiz
 });
+
+// -----test-----
+
+const TEST_MODE = process.env.TEST_MODE === "true";
+const TEST_LEADER_ID = process.env.TEST_LEADER_ID
+  ? Number(process.env.TEST_LEADER_ID)
+  : null;
+const TEST_ADMIN_ID = process.env.TEST_ADMIN_ID
+  ? Number(process.env.TEST_ADMIN_ID)
+  : null;
+
+// -----test-----
 
 const COLLECT_TIME = Number(process.env.COLLECT_SECONDS || 120) * 1000;
 const ALLOWED_GROUP_ID = Number(process.env.ALLOWED_GROUP_ID);
@@ -64,6 +81,7 @@ const MAX_TEXTS = 10;
 const MAX_PHOTOS = 10;
 const MAX_VIDEOS = 3;
 const MAX_VIDEO_SIZE = 50 * 1024 * 1024;
+const MAX_PROOF_FILE_SIZE = 20 * 1024 * 1024; // 20 MB
 
 const userRate = new Map<number, { count: number; startedAt: number }>();
 
@@ -168,16 +186,14 @@ async function handleNonAppealBeforeSession(ctx: any, text: string) {
 
     const activeOrganizations = await getCachedOrganizations(prisma);
 
-    // Agar null bo'lsa, funksiyadan chiqib ketish yoki xato otish
     if (!activeOrganizations) {
       console.error("Tashkilotlar topilmadi!");
-      return; // yoki throw new Error("...");
+      return;
     }
 
-    // Bu joyga kelganda TypeScript activeOrganizations faqat massiv ekanligiga amin bo'ladi
     const ai = await classifyWithTimeout(
       text,
-      activeOrganizations, // Xatolik yo'qoladi
+      activeOrganizations,
       AI_TIMEOUT_SECONDS * 1000
     );
     setCachedAiResult(text, ai);
@@ -219,8 +235,6 @@ async function startFinalize(
 }
 
 // ========== COMMANDS ==========
-// ADMIN_IDS ni .env dan o‘qish
-
 bot.command("start", async (ctx) => {
   if (ctx.chat.type !== "private") return;
   if (!ctx.from) return;
@@ -248,7 +262,6 @@ bot.command("start", async (ctx) => {
       },
     });
 
-    // Agar admin bo‘lsa, maxsus tugmali klaviatura
     if (isAdmin) {
       const adminPanelUrl = process.env.ADMIN_SITE;
       if (adminPanelUrl) {
@@ -277,6 +290,140 @@ bot.command("start", async (ctx) => {
 });
 
 // ========== MESSAGE HANDLERS ==========
+
+// ========== YANGI: Dalolatnoma faylini qabul qilish (shaxsiy chat) ==========
+bot.on(":file", async (ctx) => {
+  // Faqat shaxsiy chatda ishlaydi
+  if (ctx.chat.type !== "private") return;
+  if (!ctx.from) return;
+  if (!ctx.message) return; // ✅ Xatolik tuzatildi
+
+  const userId = ctx.from.id;
+  const proofRequest = awaitingProof.get(userId);
+  if (!proofRequest) return;
+
+  let fileId: string | undefined;
+  let fileType: string = "unknown";
+  let fileName: string = "dalolatnoma";
+  let fileSize: number = 0;
+
+  if (ctx.message.photo) {
+    const photo = ctx.message.photo[ctx.message.photo.length - 1];
+    fileId = photo.file_id;
+    fileType = "rasm";
+    fileSize = photo.file_size || 0;
+    fileName = `${proofRequest.appealNumber}_dalolatnoma.jpg`;
+  } else if (ctx.message.document) {
+    const doc = ctx.message.document;
+    fileId = doc.file_id;
+    fileSize = doc.file_size || 0;
+    fileName = doc.file_name || `${proofRequest.appealNumber}_dalolatnoma.pdf`;
+    const mimeType = doc.mime_type || "";
+
+    const allowedMimeTypes = [
+      "application/pdf",
+      "application/msword",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "application/vnd.ms-excel",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "image/jpeg",
+      "image/png",
+      "image/gif",
+    ];
+
+    if (!allowedMimeTypes.includes(mimeType)) {
+      await ctx.reply(
+        "❌ **Noto‘g‘ri fayl turi!**\n\n" +
+          "Faqat **rasm (JPG, PNG), PDF, Word, Excel** fayllari qabul qilinadi."
+      );
+      return;
+    }
+
+    if (mimeType.includes("pdf")) fileType = "PDF";
+    else if (mimeType.includes("word")) fileType = "Word";
+    else if (mimeType.includes("excel") || mimeType.includes("sheet"))
+      fileType = "Excel";
+    else fileType = "rasm";
+  } else {
+    await ctx.reply("❌ Iltimos, rasm yoki hujjat (PDF, Word, Excel) yuklang.");
+    return;
+  }
+
+  if (!fileId) {
+    await ctx.reply("❌ Fayl topilmadi. Iltimos, qayta urining.");
+    return;
+  }
+
+  // 2. Fayl hajmini tekshirish
+  const MAX_PROOF_FILE_SIZE = 20 * 1024 * 1024; // 20 MB
+  if (fileSize > MAX_PROOF_FILE_SIZE) {
+    await ctx.reply(
+      `❌ **Fayl juda katta!**\n\n` +
+        `Ruxsat etilgan maksimal hajm: **${
+          MAX_PROOF_FILE_SIZE / 1024 / 1024
+        } MB**\n` +
+        `Siz yuborgan fayl: **${Math.round(fileSize / 1024 / 1024)} MB**`
+    );
+    return;
+  }
+
+  try {
+    // 3. Murojaat statusini RESOLVED qilish
+    const now = new Date();
+    await prisma.appeal.update({
+      where: { id: proofRequest.appealId },
+      data: { status: "RESOLVED", resolvedAt: now },
+    });
+
+    // 4. Admin'ga dalolatnoma yuborish
+    // const adminId =
+    //   process.env.ERROR_LEADER_ID || process.env.FALLBACK_LEADER_ID;
+
+    // ----tst----
+    let adminId: number | null = null;
+    if (TEST_MODE && TEST_ADMIN_ID) {
+      adminId = TEST_ADMIN_ID;
+      console.log(
+        `🧪 TEST MODE: Dalolatnoma test admin'ga (${TEST_ADMIN_ID}) yuborilmoqda`
+      );
+    } else {
+      adminId =
+        process.env.ERROR_LEADER_ID || process.env.FALLBACK_LEADER_ID || null;
+    }
+    if (adminId) {
+      const captionText =
+        `📄 **Dalolatnoma**\n\n` +
+        `📌 **Murojaat raqami:** ${proofRequest.appealNumber}\n` +
+        `👤 **Mas’ul xodim:** ${ctx.from.first_name || "Noma’lum"}${
+          ctx.from.username ? ` (@${ctx.from.username})` : ""
+        }\n` +
+        `📁 **Fayl turi:** ${fileType}\n` +
+        `🕒 **Hal qilindi:** ${now.toLocaleString("uz-UZ")}\n\n` +
+        `✅ Murojaat tegishli tartibda hal qilindi va dalolatnoma ilova qilindi.`;
+
+      await bot.api.sendDocument(adminId, new InputFile(fileId), {
+        caption: captionText,
+        parse_mode: "Markdown",
+      });
+    }
+
+    // 5. Xodimga tasdiqlov xabari
+    await ctx.reply(
+      `✅ **Murojaat ${proofRequest.appealNumber} hal qilindi!**\n\n` +
+        `📎 Dalolatnoma qabul qilindi va adminga yuborildi.\n` +
+        `🕒 Vaqt: ${now.toLocaleString("uz-UZ")}`
+    );
+
+    // 6. Holatni tozalash
+    awaitingProof.delete(userId);
+  } catch (error) {
+    console.error("❌ DALOLATNOMA QAYTA ISHLASH XATOSI:", error);
+    await ctx.reply("❌ Xatolik yuz berdi. Iltimos, qayta urining.");
+    awaitingProof.delete(userId);
+  }
+});
+
+// ========== Eski MESSAGE HANDLERS (guruh uchun) ==========
 bot.on("my_chat_member", async (ctx) => {
   const chat = ctx.chat;
   if (chat.type === "group" || chat.type === "supergroup") {
@@ -527,8 +674,10 @@ bot.callbackQuery(/^cancel:(.+)$/, async (ctx) => {
   } catch {}
 });
 
+// ========== YANGI: HAL QILINDI TUGMASI (dalolatnoma talab qiladi) ==========
 bot.callbackQuery(/^resolve:(\d+)$/, async (ctx) => {
   const appealId = Number(ctx.match[1]);
+  const userId = ctx.from.id;
 
   try {
     const appeal = await prisma.appeal.findUnique({ where: { id: appealId } });
@@ -541,22 +690,35 @@ bot.callbackQuery(/^resolve:(\d+)$/, async (ctx) => {
       return;
     }
 
-    const now = new Date();
-    await prisma.appeal.update({
-      where: { id: appealId },
-      data: { status: "RESOLVED", resolvedAt: now },
-    });
-
+    // 1. Xabarni tahrirlash – tugma yo‘qoladi va holat haqida xabar
     await ctx.editMessageCaption({
       caption:
         ctx.callbackQuery.message?.caption +
-        `\n\n🟢 **IJRO ETILDI:** ${now.toLocaleString(
-          "uz-UZ"
-        )}\nHolat: Hal qilindi.`,
+        `\n\n⏳ **Dalolatnoma kutilmoqda...**\nIltimos, fayl (rasm, PDF, Word, Excel) yuklang.`,
     });
 
+    // 2. Holatni saqlash (status hali o‘zgarmaydi)
+    awaitingProof.set(userId, {
+      appealId,
+      appealNumber: appeal.murojaatRaqami,
+      userId,
+    });
+
+    // 3. Foydalanuvchiga fayl so‘rash
+    await ctx.reply(
+      `📎 **Dalolatnoma faylini yuklang**\n\n` +
+        `Murojaat raqami: **${appeal.murojaatRaqami}**\n\n` +
+        `**Qabul qilinadigan fayl turlari:**\n` +
+        `• Rasm (JPG, PNG)\n` +
+        `• PDF\n` +
+        `• Word (DOC, DOCX)\n` +
+        `• Excel (XLS, XLSX)\n\n` +
+        `Maksimal hajm: 20 MB\n\n` +
+        `Fayl yuklaganingizdan so‘ng murojaat hal qilingan deb belgilanadi.`
+    );
+
     await ctx
-      .answerCallbackQuery("Murojaat muvaffaqiyatli yopildi! ✅")
+      .answerCallbackQuery("Iltimos, dalolatnoma faylini yuklang.")
       .catch(() => {});
   } catch (error) {
     console.error("❌ RESOLVE ERROR:", error);
@@ -564,7 +726,7 @@ bot.callbackQuery(/^resolve:(\d+)$/, async (ctx) => {
   }
 });
 
-// ========== FINALIZE APPEAL FUNCTION ==========
+// ========== ASOSIY FINALIZE APPEAL FUNKSIYASI (O‘ZGARMAGAN) ==========
 async function finalizeAppeal(session: Session) {
   const tempFiles: string[] = [];
   const userId = session.userId;
@@ -597,7 +759,6 @@ async function finalizeAppeal(session: Session) {
       return;
     }
 
-    // Admin tashkilotini olish (agar bo'lmasa yaratish)
     let adminOrganization = await prisma.organization.findFirst({
       where: { kategoriya: "admin", active: true },
     });
@@ -613,39 +774,34 @@ async function finalizeAppeal(session: Session) {
       });
     }
 
-    let organization = adminOrganization; // default
+    let organization = adminOrganization;
     let targetTelegramId: number | null = FALLBACK_LEADER_ID;
 
-    // Normal tashkilotni qidirish
+    // -----test-----
+    if (TEST_MODE && TEST_LEADER_ID) {
+      targetTelegramId = TEST_LEADER_ID;
+      console.log(
+        `🧪 TEST MODE: Murojaat test rahbariga (${TEST_LEADER_ID}) yuborilmoqda`
+      );
+    }
+    // -----test-----
+
     const foundOrg = await prisma.organization.findFirst({
       where: { kategoriya: ai.kategoriya, active: true },
     });
 
     if (foundOrg && foundOrg.telegramId && ai.kategoriya !== "admin") {
-      // Tashkilot aniqlandi va telegramId bor
       organization = foundOrg;
       targetTelegramId = Number(foundOrg.telegramId);
     } else if (foundOrg && ai.kategoriya !== "admin") {
-      // Tashkilot aniqlandi, lekin telegramId yo'q → fallback
       organization = foundOrg;
       targetTelegramId = FALLBACK_LEADER_ID;
     }
-    // else: adminOrganization va FALLBACK_LEADER_ID ishlatiladi
 
     console.log(
       `📌 Murojaat: kategoriya=${ai.kategoriya}, tashkilot=${organization.nomi}, targetId=${targetTelegramId}`
     );
 
-    const dateString = getUzbekistanDateString();
-    const todayCount = await prisma.appeal.count({
-      where: { murojaatRaqami: { startsWith: `SHF-${dateString}-` } },
-    });
-    const appealNumber = formatAppealNumber(dateString, todayCount + 1);
-
-    const DEADLINE_DAYS = 5;
-    const deadlineDate = new Date();
-    deadlineDate.setDate(deadlineDate.getDate() + DEADLINE_DAYS);
-    // ========== USER NI ANIQLASH ==========
     const user = await prisma.user.upsert({
       where: { telegramId: BigInt(session.userId) },
       update: {
@@ -662,6 +818,16 @@ async function finalizeAppeal(session: Session) {
         phone: phone || undefined,
       },
     });
+
+    const dateString = getUzbekistanDateString();
+    const todayCount = await prisma.appeal.count({
+      where: { murojaatRaqami: { startsWith: `SHF-${dateString}-` } },
+    });
+    const appealNumber = formatAppealNumber(dateString, todayCount + 1);
+
+    const DEADLINE_DAYS = 5;
+    const deadlineDate = new Date();
+    deadlineDate.setDate(deadlineDate.getDate() + DEADLINE_DAYS);
 
     const appeal = await prisma.appeal.create({
       data: {
@@ -717,13 +883,11 @@ async function finalizeAppeal(session: Session) {
       caption.length > 1000 ? caption.slice(0, 1000) + "..." : caption;
 
     if (targetTelegramId) {
-      // 1. Inline klaviaturani yaratamiz
       const leaderKeyboard = new InlineKeyboard().text(
         "✅ Hal qilindi",
         `resolve:${appeal.id.toString()}`
       );
 
-      // 2. Fuqaro profiliga o'tish linkini caption matni ichiga joylaymiz
       const contactText = session.username
         ? `\n💬 Fuqaro bilan bog'lanish: @${session.username}`
         : `\n💬 Fuqaro profili: <a href="tg://user?id=${session.userId}">${
@@ -732,16 +896,12 @@ async function finalizeAppeal(session: Session) {
 
       const fullCaption = safeCaption + contactText;
 
-      // 3. TEST REJIM: Xabar borishi kerak bo'lgan ID'lar ro'yxati
-      // Bu yerga o'zingizning haqiqiy Telegram ID'ingizni yozing (masalan: 987654321)
       const MY_TELEGRAM_ID = 8364396329;
 
-      // Agar mas'ulning ID'si sizniki bilan bir xil bo'lsa, bitta odamga ikki marta bormasligi uchun Set ishlatamiz
       const recipients = Array.from(
         new Set([Number(targetTelegramId), MY_TELEGRAM_ID])
       );
 
-      // Ro'yxatdagi har bir ID uchun xabarni bir xil qilib yuboramiz
       for (const chatId of recipients) {
         try {
           await bot.api.sendDocument(chatId, new InputFile(pdfPath), {
