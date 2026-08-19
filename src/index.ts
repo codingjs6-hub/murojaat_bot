@@ -387,8 +387,7 @@ bot.on(":file", async (ctx) => {
         `🧪 TEST MODE: Dalolatnoma test admin'ga (${TEST_ADMIN_ID}) yuborilmoqda`
       );
     } else {
-      adminId =
-        process.env.ERROR_LEADER_ID || process.env.FALLBACK_LEADER_ID || null;
+      adminId = 6179892207;
     }
     if (adminId) {
       const captionText =
