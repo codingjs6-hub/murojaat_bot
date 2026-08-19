@@ -385,6 +385,7 @@ bot.on(":file", async (ctx) => {
     // 4. Admin'ga dalolatnoma yuborish (InputFile.fromFileId ishlatiladi!)
     let adminId = 6179892207;
 
+    // Admin'ga dalolatnoma yuborish
     if (adminId) {
       const captionText =
         `📄 **Dalolatnoma**\n\n` +
@@ -396,9 +397,8 @@ bot.on(":file", async (ctx) => {
         `🕒 **Hal qilindi:** ${now.toLocaleString("uz-UZ")}\n\n` +
         `✅ Murojaat tegishli tartibda hal qilindi va dalolatnoma ilova qilindi.`;
 
-      // ✅ Muhim: InputFile.fromFileId() ishlatiladi!
-      await bot.api.sendDocument(adminId, {
-        document: InputFile.fromFileId(fileId),
+      // ✅ To‘g‘ri: fileId string sifatida yuboriladi
+      await bot.api.sendDocument(adminId, fileId, {
         caption: captionText,
         parse_mode: "Markdown",
       });
