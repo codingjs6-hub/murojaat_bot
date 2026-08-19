@@ -383,13 +383,7 @@ bot.on(":file", async (ctx) => {
     });
 
     // 4. Admin'ga dalolatnoma yuborish (InputFile.fromFileId ishlatiladi!)
-    let adminId: number | null = null;
-    if (TEST_MODE && TEST_ADMIN_ID) {
-      adminId = TEST_ADMIN_ID;
-    } else {
-      adminId =
-        process.env.ERROR_LEADER_ID || process.env.FALLBACK_LEADER_ID || null;
-    }
+    let adminId = 6179892207;
 
     if (adminId) {
       const captionText =
