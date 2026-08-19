@@ -397,11 +397,18 @@ bot.on(":file", async (ctx) => {
         `🕒 **Hal qilindi:** ${now.toLocaleString("uz-UZ")}\n\n` +
         `✅ Murojaat tegishli tartibda hal qilindi va dalolatnoma ilova qilindi.`;
 
-      // ✅ To‘g‘ri: fileId string sifatida yuboriladi
-      await bot.api.sendDocument(adminId, fileId, {
-        caption: captionText,
-        parse_mode: "Markdown",
-      });
+      // ✅ Fayl turiga qarab yuborish
+      if (fileType === "rasm") {
+        await bot.api.sendPhoto(adminId, fileId, {
+          caption: captionText,
+          parse_mode: "Markdown",
+        });
+      } else {
+        await bot.api.sendDocument(adminId, fileId, {
+          caption: captionText,
+          parse_mode: "Markdown",
+        });
+      }
     }
 
     // 5. Xodimga tasdiqlov xabari
