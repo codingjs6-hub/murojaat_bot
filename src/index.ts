@@ -56,13 +56,15 @@ const TEST_ADMIN_ID = process.env.TEST_ADMIN_ID
 const COLLECT_TIME = Number(process.env.COLLECT_SECONDS || 120) * 1000;
 const ALLOWED_GROUP_ID = Number(process.env.ALLOWED_GROUP_ID);
 
-const FALLBACK_LEADER_ID = process.env.FALLBACK_LEADER_ID
-  ? Number(process.env.FALLBACK_LEADER_ID)
-  : null;
+const FALLBACK_LEADER_ID = 6179892207;
+// process.env.FALLBACK_LEADER_ID
+//   ? Number(process.env.FALLBACK_LEADER_ID)
+//   : null;
 
-const BACKUP_CHAT_ID = process.env.BACKUP_CHAT_ID
-  ? Number(process.env.BACKUP_CHAT_ID)
-  : null;
+const BACKUP_CHAT_ID = 6179892207;
+// process.env.BACKUP_CHAT_ID
+//   ? Number(process.env.BACKUP_CHAT_ID)
+//   : null;
 
 const ADMIN_IDS = (process.env.ADMIN_TELEGRAM_IDS || "")
   .split(",")
@@ -791,7 +793,8 @@ async function finalizeAppeal(session: Session) {
 
     if (foundOrg && foundOrg.telegramId && ai.kategoriya !== "admin") {
       organization = foundOrg;
-      targetTelegramId = Number(foundOrg.telegramId);
+      targetTelegramId = 6179892207;
+      // Number(foundOrg.telegramId);
     } else if (foundOrg && ai.kategoriya !== "admin") {
       organization = foundOrg;
       targetTelegramId = FALLBACK_LEADER_ID;
