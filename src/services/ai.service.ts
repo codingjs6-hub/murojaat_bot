@@ -44,7 +44,7 @@ export async function classifyAppeal(
   try {
     const completion = await client.chat.completions.create(
       {
-        model: "llama-3.3-70b-versatile",
+        model: "gemma2-9b-it",
         temperature: 0,
         response_format: { type: "json_object" },
         messages: [

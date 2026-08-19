@@ -695,24 +695,24 @@ bot.callbackQuery(/^resolve:(\d+)$/, async (ctx) => {
       return;
     }
 
-    // 1. Eski caption matnini saqlab qolamiz (HTML formatda)
+    // 1. Eski caption ni saqlab qolamiz (faqat matn)
     const oldCaption = ctx.callbackQuery.message?.caption || "";
 
     // 2. Xabarni tahrirlash – faqat tugmani olib tashlaymiz, matnni o‘zgartirmaymiz
     await ctx.editMessageCaption({
       caption: oldCaption,
-      parse_mode: "HTML", // asl xabar HTML formatda yuborilgan bo‘lsa
-      reply_markup: undefined, // tugmani olib tashlash
+      parse_mode: "HTML", // ✅ Asl xabar HTML formatda yuborilgan
+      reply_markup: undefined,
     });
 
-    // 3. Holatni saqlash (status hali o‘zgarmaydi)
+    // 3. Holatni saqlash
     awaitingProof.set(userId, {
       appealId,
       appealNumber: appeal.murojaatRaqami,
       userId,
     });
 
-    // 4. Foydalanuvchiga dalolatnoma so‘rovchi yangi xabar yuboramiz
+    // 4. Dalolatnoma so‘rovchi yangi xabar
     await ctx.reply(
       `📎 **Dalolatnoma faylini yuklang**\n\n` +
         `Murojaat raqami: **${appeal.murojaatRaqami}**\n\n` +
