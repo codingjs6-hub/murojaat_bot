@@ -306,7 +306,7 @@ bot.on(":file", async (ctx) => {
   let fileType: string = "unknown";
   let fileName: string = "dalolatnoma";
   let fileSize: number = 0;
-  let isPhoto = false; // ✅ Rasm yoki hujjat ekanligini aniqlash
+  let isPhoto = false;
 
   // 1. Fayl turini aniqlash
   if (ctx.message.photo) {
@@ -339,11 +339,27 @@ bot.on(":file", async (ctx) => {
         "❌ **Noto‘g‘ri fayl turi!**\n\n" +
           "Faqat **rasm (JPG, PNG), PDF, Word, Excel** fayllari qabul qilinadi."
       );
+      // Xatolikda tugmani qaytarish
+      try {
+        const keyboard = new InlineKeyboard().text(
+          "✅ Hal qilindi",
+          `resolve:${proofRequest.appealId}`
+        );
+        await ctx.api.editMessageReplyMarkup(
+          ctx.chat.id,
+          proofRequest.messageId,
+          {
+            reply_markup: keyboard,
+          }
+        );
+      } catch (e) {}
+      await ctx.api
+        .deleteMessage(ctx.chat.id, proofRequest.messageId)
+        .catch(() => {});
       awaitingProof.delete(userId);
       return;
     }
 
-    // ✅ To‘g‘ri fileType aniqlash
     if (mimeType.includes("pdf")) {
       fileType = "PDF";
       isPhoto = false;
@@ -357,18 +373,50 @@ bot.on(":file", async (ctx) => {
       fileType = "rasm";
       isPhoto = true;
     } else {
-      // Agar ruxsat etilgan bo'lsa, lekin yuqoridagi turlarga kirmasa
       fileType = "hujjat";
       isPhoto = false;
     }
   } else {
     await ctx.reply("❌ Iltimos, rasm yoki hujjat (PDF, Word, Excel) yuklang.");
+    // Xatolikda tugmani qaytarish
+    try {
+      const keyboard = new InlineKeyboard().text(
+        "✅ Hal qilindi",
+        `resolve:${proofRequest.appealId}`
+      );
+      await ctx.api.editMessageReplyMarkup(
+        ctx.chat.id,
+        proofRequest.messageId,
+        {
+          reply_markup: keyboard,
+        }
+      );
+    } catch (e) {}
+    await ctx.api
+      .deleteMessage(ctx.chat.id, proofRequest.messageId)
+      .catch(() => {});
     awaitingProof.delete(userId);
     return;
   }
 
   if (!fileId) {
     await ctx.reply("❌ Fayl topilmadi. Iltimos, qayta urining.");
+    try {
+      const keyboard = new InlineKeyboard().text(
+        "✅ Hal qilindi",
+        `resolve:${proofRequest.appealId}`
+      );
+      await ctx.api.editMessageReplyMarkup(
+        ctx.chat.id,
+        proofRequest.messageId,
+        {
+          reply_markup: keyboard,
+        }
+      );
+    } catch (e) {}
+    await ctx.api
+      .deleteMessage(ctx.chat.id, proofRequest.messageId)
+      .catch(() => {});
     awaitingProof.delete(userId);
     return;
   }
@@ -383,6 +431,22 @@ bot.on(":file", async (ctx) => {
         } MB**\n` +
         `Siz yuborgan fayl: **${Math.round(fileSize / 1024 / 1024)} MB**`
     );
+    try {
+      const keyboard = new InlineKeyboard().text(
+        "✅ Hal qilindi",
+        `resolve:${proofRequest.appealId}`
+      );
+      await ctx.api.editMessageReplyMarkup(
+        ctx.chat.id,
+        proofRequest.messageId,
+        {
+          reply_markup: keyboard,
+        }
+      );
+    } catch (e) {}
+    await ctx.api
+      .deleteMessage(ctx.chat.id, proofRequest.messageId)
+      .catch(() => {});
     awaitingProof.delete(userId);
     return;
   }
@@ -398,9 +462,7 @@ bot.on(":file", async (ctx) => {
     // 4. Dalolatnoma so'rovchi xabarni o'chirish
     try {
       await ctx.api.deleteMessage(ctx.chat.id, proofRequest.messageId);
-    } catch (e) {
-      // Xabar topilmasa yoki o‘chirish imkoni bo‘lmasa, indamaymiz
-    }
+    } catch (e) {}
 
     // 5. Admin'ga dalolatnoma yuborish
     let adminId = 6179892207;
@@ -416,7 +478,6 @@ bot.on(":file", async (ctx) => {
         `🕒 **Hal qilindi:** ${now.toLocaleString("uz-UZ")}\n\n` +
         `✅ Murojaat tegishli tartibda hal qilindi va dalolatnoma ilova qilindi.`;
 
-      // ✅ Rasm yoki hujjatga qarab yuborish
       if (isPhoto) {
         await bot.api.sendPhoto(adminId, fileId, {
           caption: captionText,
@@ -442,10 +503,27 @@ bot.on(":file", async (ctx) => {
   } catch (error) {
     console.error("❌ DALOLATNOMA QAYTA ISHLASH XATOSI:", error);
     await ctx.reply("❌ Xatolik yuz berdi. Iltimos, qayta urining.");
-    // Xatolikda ham xabarni o'chirish va holatni tozalash
+
+    // 🔁 Xatolikda tugmani qaytarib qo'yish
+    try {
+      const keyboard = new InlineKeyboard().text(
+        "✅ Hal qilindi",
+        `resolve:${proofRequest.appealId}`
+      );
+      await ctx.api.editMessageReplyMarkup(
+        ctx.chat.id,
+        proofRequest.messageId,
+        {
+          reply_markup: keyboard,
+        }
+      );
+    } catch (e) {}
+
+    // Dalolatnoma so'rovchi xabarni o'chirish
     try {
       await ctx.api.deleteMessage(ctx.chat.id, proofRequest.messageId);
     } catch (e) {}
+
     awaitingProof.delete(userId);
   }
 });
