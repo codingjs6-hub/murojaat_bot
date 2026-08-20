@@ -30,10 +30,10 @@ if (!token) throw new Error("BOT_TOKEN topilmadi");
 const bot = new Bot(token);
 const sessions = new Map<number, Session>();
 
-// ========== YANGI: Dalolatnoma kutilayotgan foydalanuvchilar ==========
+// ========== YANGI: Dalolatnoma kutilayotgan foydalanuvchilar (messageId qo'shilgan) ==========
 const awaitingProof = new Map<
   number,
-  { appealId: number; appealNumber: string; userId: number }
+  { appealId: number; appealNumber: string; userId: number; messageId: number }
 >();
 
 // ========== XATOLARNI TUTISH ==========
@@ -42,7 +42,6 @@ bot.catch((err) => {
 });
 
 // -----test-----
-
 const TEST_MODE = process.env.TEST_MODE === "true";
 const TEST_LEADER_ID = process.env.TEST_LEADER_ID
   ? Number(process.env.TEST_LEADER_ID)
@@ -50,7 +49,6 @@ const TEST_LEADER_ID = process.env.TEST_LEADER_ID
 const TEST_ADMIN_ID = process.env.TEST_ADMIN_ID
   ? Number(process.env.TEST_ADMIN_ID)
   : null;
-
 // -----test-----
 
 const COLLECT_TIME = Number(process.env.COLLECT_SECONDS || 120) * 1000;
@@ -397,7 +395,14 @@ bot.on(":file", async (ctx) => {
       data: { status: "RESOLVED", resolvedAt: now },
     });
 
-    // 4. Admin'ga dalolatnoma yuborish
+    // 4. Dalolatnoma so'rovchi xabarni o'chirish
+    try {
+      await ctx.api.deleteMessage(ctx.chat.id, proofRequest.messageId);
+    } catch (e) {
+      // Xabar topilmasa yoki o‘chirish imkoni bo‘lmasa, indamaymiz
+    }
+
+    // 5. Admin'ga dalolatnoma yuborish
     let adminId = 6179892207;
 
     if (adminId) {
@@ -425,18 +430,22 @@ bot.on(":file", async (ctx) => {
       }
     }
 
-    // 5. Xodimga tasdiqlov xabari
+    // 6. Xodimga tasdiqlov xabari
     await ctx.reply(
       `✅ **Murojaat ${proofRequest.appealNumber} hal qilindi!**\n\n` +
         `📎 Dalolatnoma qabul qilindi va adminga yuborildi.\n` +
         `🕒 Vaqt: ${now.toLocaleString("uz-UZ")}`
     );
 
-    // 6. Holatni tozalash
+    // 7. Holatni tozalash
     awaitingProof.delete(userId);
   } catch (error) {
     console.error("❌ DALOLATNOMA QAYTA ISHLASH XATOSI:", error);
     await ctx.reply("❌ Xatolik yuz berdi. Iltimos, qayta urining.");
+    // Xatolikda ham xabarni o'chirish va holatni tozalash
+    try {
+      await ctx.api.deleteMessage(ctx.chat.id, proofRequest.messageId);
+    } catch (e) {}
     awaitingProof.delete(userId);
   }
 });
@@ -692,8 +701,7 @@ bot.callbackQuery(/^cancel:(.+)$/, async (ctx) => {
   } catch {}
 });
 
-// ========== YANGI: HAL QILINDI TUGMASI (dalolatnoma talab qiladi) ==========
-// ========== HAL QILINDI TUGMASI (dalolatnoma talab qiladi) ==========
+// ========== HAL QILINDI TUGMASI (dalolatnoma talab qiladi, xabar o'chirish bilan) ==========
 bot.callbackQuery(/^resolve:(\d+)$/, async (ctx) => {
   const appealId = Number(ctx.match[1]);
   const userId = ctx.from.id;
@@ -709,25 +717,29 @@ bot.callbackQuery(/^resolve:(\d+)$/, async (ctx) => {
       return;
     }
 
-    // 1. Eski caption ni saqlab qolamiz (faqat matn)
+    // 1. Avvalgi dalolatnoma so‘rovini tekshirish va xabarni o‘chirish
+    const existingProof = awaitingProof.get(userId);
+    if (existingProof && ctx.chat) {
+      try {
+        await ctx.api.deleteMessage(ctx.chat.id, existingProof.messageId);
+      } catch (e) {
+        // Xabar topilmasa yoki o‘chirish imkoni bo‘lmasa, indamaymiz
+      }
+      awaitingProof.delete(userId);
+    }
+
+    // 2. Eski xabarni tahrirlash – tugmani olib tashlaymiz, matnni o‘zgartirmaymiz
     const oldCaption = ctx.callbackQuery.message?.caption || "";
+    if (ctx.callbackQuery.message) {
+      await ctx.editMessageCaption({
+        caption: oldCaption,
+        parse_mode: "HTML",
+        reply_markup: undefined,
+      });
+    }
 
-    // 2. Xabarni tahrirlash – faqat tugmani olib tashlaymiz, matnni o‘zgartirmaymiz
-    await ctx.editMessageCaption({
-      caption: oldCaption,
-      parse_mode: "HTML", // ✅ Asl xabar HTML formatda yuborilgan
-      reply_markup: undefined,
-    });
-
-    // 3. Holatni saqlash
-    awaitingProof.set(userId, {
-      appealId,
-      appealNumber: appeal.murojaatRaqami,
-      userId,
-    });
-
-    // 4. Dalolatnoma so‘rovchi yangi xabar
-    await ctx.reply(
+    // 3. Yangi dalolatnoma so‘rovi xabarini yuborish
+    const sentMessage = await ctx.reply(
       `📎 **Dalolatnoma faylini yuklang**\n\n` +
         `Murojaat raqami: **${appeal.murojaatRaqami}**\n\n` +
         `**Qabul qilinadigan fayl turlari:**\n` +
@@ -740,6 +752,14 @@ bot.callbackQuery(/^resolve:(\d+)$/, async (ctx) => {
       { parse_mode: "Markdown" }
     );
 
+    // 4. Holatni saqlash (messageId bilan)
+    awaitingProof.set(userId, {
+      appealId,
+      appealNumber: appeal.murojaatRaqami,
+      userId,
+      messageId: sentMessage.message_id,
+    });
+
     await ctx
       .answerCallbackQuery("Iltimos, dalolatnoma faylini yuklang.")
       .catch(() => {});
@@ -748,7 +768,8 @@ bot.callbackQuery(/^resolve:(\d+)$/, async (ctx) => {
     await ctx.answerCallbackQuery("Xatolik yuz berdi.").catch(() => {});
   }
 });
-// ========== ASOSIY FINALIZE APPEAL FUNKSIYASI (O‘ZGARMAGAN) ==========
+
+// ========== ASOSIY FINALIZE APPEAL FUNKSIYASI ==========
 async function finalizeAppeal(session: Session) {
   const tempFiles: string[] = [];
   const userId = session.userId;
@@ -814,8 +835,7 @@ async function finalizeAppeal(session: Session) {
 
     if (foundOrg && foundOrg.telegramId && ai.kategoriya !== "admin") {
       organization = foundOrg;
-      targetTelegramId = 6179892207;
-      // Number(foundOrg.telegramId);
+      targetTelegramId = Number(foundOrg.telegramId); // ✅ to'g'rilandi (qattiq kod emas)
     } else if (foundOrg && ai.kategoriya !== "admin") {
       organization = foundOrg;
       targetTelegramId = FALLBACK_LEADER_ID;
