@@ -310,6 +310,7 @@ bot.on(":file", async (ctx) => {
 
   // 1. Fayl turini aniqlash
   if (ctx.message.photo) {
+    // Rasm (galereyadan tanlangan)
     const photo = ctx.message.photo[ctx.message.photo.length - 1];
     fileId = photo.file_id;
     fileType = "rasm";
@@ -317,12 +318,14 @@ bot.on(":file", async (ctx) => {
     fileName = `${proofRequest.appealNumber}_dalolatnoma.jpg`;
     isPhoto = true;
   } else if (ctx.message.document) {
+    // Fayl (document sifatida yuborilgan)
     const doc = ctx.message.document;
     fileId = doc.file_id;
     fileSize = doc.file_size || 0;
     fileName = doc.file_name || `${proofRequest.appealNumber}_dalolatnoma.pdf`;
     const mimeType = doc.mime_type || "";
 
+    // Ruxsat etilgan MIME turlari
     const allowedMimeTypes = [
       "application/pdf",
       "application/msword",
@@ -334,32 +337,42 @@ bot.on(":file", async (ctx) => {
       "image/gif",
     ];
 
+    // Agar MIME type ruxsat etilgan ro'yxatda bo'lmasa
     if (!allowedMimeTypes.includes(mimeType)) {
-      await ctx.reply(
-        "❌ **Noto‘g‘ri fayl turi!**\n\n" +
-          "Faqat **rasm (JPG, PNG), PDF, Word, Excel** fayllari qabul qilinadi."
-      );
-      // Xatolikda tugmani qaytarish
-      try {
-        const keyboard = new InlineKeyboard().text(
-          "✅ Hal qilindi",
-          `resolve:${proofRequest.appealId}`
+      // Agar mime type bo'sh bo'lsa, fayl nomiga qarab tekshirish
+      if (
+        mimeType === "" &&
+        fileName.match(/\.(jpg|jpeg|png|gif|pdf|docx?|xlsx?)$/i)
+      ) {
+        // Fayl nomi rasm yoki hujjatga o'xshaydi, davom etamiz
+      } else {
+        await ctx.reply(
+          "❌ **Noto‘g‘ri fayl turi!**\n\n" +
+            "Faqat **rasm (JPG, PNG), PDF, Word, Excel** fayllari qabul qilinadi."
         );
-        await ctx.api.editMessageReplyMarkup(
-          ctx.chat.id,
-          proofRequest.messageId,
-          {
-            reply_markup: keyboard,
-          }
-        );
-      } catch (e) {}
-      await ctx.api
-        .deleteMessage(ctx.chat.id, proofRequest.messageId)
-        .catch(() => {});
-      awaitingProof.delete(userId);
-      return;
+        // Xatolikda tugmani qaytarish
+        try {
+          const keyboard = new InlineKeyboard().text(
+            "✅ Hal qilindi",
+            `resolve:${proofRequest.appealId}`
+          );
+          await ctx.api.editMessageReplyMarkup(
+            ctx.chat.id,
+            proofRequest.messageId,
+            {
+              reply_markup: keyboard,
+            }
+          );
+        } catch (e) {}
+        await ctx.api
+          .deleteMessage(ctx.chat.id, proofRequest.messageId)
+          .catch(() => {});
+        awaitingProof.delete(userId);
+        return;
+      }
     }
 
+    // MIME type bo'yicha fileType va isPhoto aniqlash
     if (mimeType.includes("pdf")) {
       fileType = "PDF";
       isPhoto = false;
@@ -373,8 +386,23 @@ bot.on(":file", async (ctx) => {
       fileType = "rasm";
       isPhoto = true;
     } else {
-      fileType = "hujjat";
-      isPhoto = false;
+      // Agar mimeType aniqlanmagan bo'lsa, fayl nomiga qarab taxmin qilish
+      if (fileName.match(/\.(jpg|jpeg|png|gif)$/i)) {
+        fileType = "rasm";
+        isPhoto = true;
+      } else if (fileName.match(/\.pdf$/i)) {
+        fileType = "PDF";
+        isPhoto = false;
+      } else if (fileName.match(/\.(doc|docx)$/i)) {
+        fileType = "Word";
+        isPhoto = false;
+      } else if (fileName.match(/\.(xls|xlsx)$/i)) {
+        fileType = "Excel";
+        isPhoto = false;
+      } else {
+        fileType = "hujjat";
+        isPhoto = false;
+      }
     }
   } else {
     await ctx.reply("❌ Iltimos, rasm yoki hujjat (PDF, Word, Excel) yuklang.");
@@ -465,7 +493,7 @@ bot.on(":file", async (ctx) => {
     } catch (e) {}
 
     // 5. Admin'ga dalolatnoma yuborish
-    let adminId = 6179892207;
+    let adminId = 6179892207; // yoki env dan oling
 
     if (adminId) {
       const captionText =
@@ -478,6 +506,7 @@ bot.on(":file", async (ctx) => {
         `🕒 **Hal qilindi:** ${now.toLocaleString("uz-UZ")}\n\n` +
         `✅ Murojaat tegishli tartibda hal qilindi va dalolatnoma ilova qilindi.`;
 
+      // ✅ Rasm yoki hujjatga qarab yuborish
       if (isPhoto) {
         await bot.api.sendPhoto(adminId, fileId, {
           caption: captionText,
